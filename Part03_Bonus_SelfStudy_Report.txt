@@ -1,0 +1,572 @@
+# Part 3 Bonus: Self-Study Report
+## Advanced C# Memory Management and Algorithm Analysis
+
+---
+
+## Question 5: Default Stack and Heap Sizes in C# and Considerations
+
+### Stack Size
+
+**Default Size:**
+- **32-bit applications:** 1 MB (1,048,576 bytes)
+- **64-bit applications:** 4 MB (4,194,304 bytes)
+
+**How to Change:**
+You can modify the stack size using:
+1. Project properties → Build → Advanced → Platform target
+2. Compiler flag: `/STACK:size` (in bytes)
+3. EditBin utility for compiled assemblies
+
+```csharp
+// Example: Set stack size to 2MB
+// In .csproj file:
+<PropertyGroup>
+  <StackSize>2097152</StackSize>
+</PropertyGroup>
+```
+
+### Heap Size
+
+**Default Size:**
+The managed heap in .NET does not have a fixed default size. Instead:
+- Starts small and grows dynamically as needed
+- Limited by available system memory
+- Managed by the Garbage Collector (GC)
+- Can grow up to several gigabytes depending on system resources
+
+**Heap Regions:**
+1. **Small Object Heap (SOH):** Objects < 85,000 bytes
+2. **Large Object Heap (LOH):** Objects ≥ 85,000 bytes
+
+**Generations:**
+- **Gen 0:** Short-lived objects (most frequent collection)
+- **Gen 1:** Medium-lived objects (buffer between Gen 0 and Gen 2)
+- **Gen 2:** Long-lived objects (least frequent collection)
+
+### Key Considerations
+
+#### Stack Considerations:
+
+1. **Stack Overflow Risk**
+   - Deep recursion can cause stack overflow
+   - Large local variables (especially structs) consume stack space
+   - Each method call adds a stack frame
+
+```csharp
+// DANGEROUS - Can cause stack overflow
+public int FactorialBad(int n)
+{
+    if (n == 0) return 1;
+    return n * FactorialBad(n - 1); // Deep recursion
+}
+
+// BETTER - Iterative approach
+public int FactorialGood(int n)
+{
+    int result = 1;
+    for (int i = 2; i <= n; i++)
+        result *= i;
+    return result;
+}
+```
+
+2. **Thread Stack**
+   - Each thread gets its own stack
+   - More threads = more stack memory consumption
+   - Default thread stack: 1MB
+
+3. **Value Types on Stack**
+   - Structs stored on stack (if local variables)
+   - Fast allocation and deallocation
+   - Automatic cleanup when out of scope
+
+#### Heap Considerations:
+
+1. **Memory Fragmentation**
+   - LOH can become fragmented over time
+   - .NET 4.5.1+ allows LOH compaction
+   - Can impact performance
+
+```csharp
+// Enable LOH compaction
+GCSettings.LargeObjectHeapCompactionMode = 
+    GCLargeObjectHeapCompactionMode.CompactOnce;
+GC.Collect();
+```
+
+2. **Garbage Collection Pressure**
+   - Frequent allocations trigger GC
+   - GC pauses can affect performance
+   - Object pooling can help
+
+3. **Memory Leaks**
+   - Event handlers not unsubscribed
+   - Static references keeping objects alive
+   - Unmanaged resources not disposed
+
+```csharp
+// PROBLEM - Memory leak
+public class LeakyClass
+{
+    private static List<object> cache = new List<object>();
+    
+    public void AddToCache(object item)
+    {
+        cache.Add(item); // Never removed - grows forever!
+    }
+}
+
+// SOLUTION - Proper cleanup
+public class FixedClass : IDisposable
+{
+    private List<object> cache = new List<object>();
+    
+    public void Dispose()
+    {
+        cache.Clear();
+        cache = null;
+    }
+}
+```
+
+4. **OutOfMemoryException**
+   - Can occur even with available RAM
+   - Address space fragmentation
+   - Array size limitations (max ~2GB per array)
+
+### Performance Implications
+
+| Aspect | Stack | Heap |
+|--------|-------|------|
+| **Speed** | Very fast (pointer bump) | Slower (GC overhead) |
+| **Size** | Limited (1-4 MB) | Large (system memory) |
+| **Lifetime** | Method scope | Until GC collects |
+| **Thread Safety** | Per-thread | Shared |
+| **Fragmentation** | No issue | Can fragment |
+
+### Best Practices
+
+1. **Use structs for small, value-type data** (< 16 bytes recommended)
+2. **Avoid deep recursion** or use iterative approaches
+3. **Implement IDisposable** for unmanaged resources
+4. **Use object pooling** for frequently allocated objects
+5. **Monitor GC metrics** in production
+6. **Use `stackalloc`** for temporary buffers (unsafe code)
+
+```csharp
+// Example: stackalloc for temporary buffer
+unsafe void ProcessData()
+{
+    int* buffer = stackalloc int[100]; // Stack allocation
+    // Fast, no GC pressure, auto-cleanup
+}
+```
+
+---
+
+## Question 6: Time Complexity
+
+### What is Time Complexity?
+
+Time complexity is a computational concept that describes the amount of time an algorithm takes to complete as a function of the input size (n). It helps us analyze and compare algorithm efficiency.
+
+### Big O Notation
+
+Big O notation expresses the **upper bound** of time complexity in the worst-case scenario. It focuses on how runtime grows as input grows, ignoring constant factors.
+
+### Common Time Complexities (Best to Worst)
+
+#### 1. O(1) - Constant Time
+**Description:** Execution time doesn't depend on input size.
+
+**Examples:**
+- Array access by index
+- Hash table lookup (average case)
+- Stack push/pop
+- Getting array length
+
+```csharp
+// O(1) - Always same number of operations
+public int GetFirstElement(int[] array)
+{
+    return array[0]; // One operation regardless of array size
+}
+```
+
+**Real-world analogy:** Looking at the first page of a book (no matter how long the book is).
+
+---
+
+#### 2. O(log n) - Logarithmic Time
+**Description:** Execution time grows logarithmically. Each step eliminates a fraction of remaining elements.
+
+**Examples:**
+- Binary search
+- Balanced binary tree operations
+- Finding element in sorted array
+
+```csharp
+// O(log n) - Binary Search
+public int BinarySearch(int[] sortedArray, int target)
+{
+    int left = 0, right = sortedArray.Length - 1;
+    
+    while (left <= right)
+    {
+        int mid = left + (right - left) / 2;
+        
+        if (sortedArray[mid] == target)
+            return mid;
+        else if (sortedArray[mid] < target)
+            left = mid + 1;
+        else
+            right = mid - 1;
+    }
+    return -1;
+}
+```
+
+**Growth:**
+- n = 100 → ~7 operations
+- n = 1000 → ~10 operations
+- n = 1,000,000 → ~20 operations
+
+**Real-world analogy:** Finding a word in a dictionary (eliminate half the pages each time).
+
+---
+
+#### 3. O(n) - Linear Time
+**Description:** Execution time grows linearly with input size.
+
+**Examples:**
+- Simple array traversal
+- Linear search
+- Finding min/max in unsorted array
+- Single foreach loop
+
+```csharp
+// O(n) - Linear Search
+public int LinearSearch(int[] array, int target)
+{
+    for (int i = 0; i < array.Length; i++) // n iterations
+    {
+        if (array[i] == target)
+            return i;
+    }
+    return -1;
+}
+
+// O(n) - Sum calculation
+public int CalculateSum(int[] array)
+{
+    int sum = 0;
+    foreach (int num in array) // n iterations
+    {
+        sum += num;
+    }
+    return sum;
+}
+```
+
+**Growth:**
+- n = 100 → 100 operations
+- n = 1000 → 1000 operations
+- n = 1,000,000 → 1,000,000 operations
+
+**Real-world analogy:** Reading every page of a book to find information.
+
+---
+
+#### 4. O(n log n) - Linearithmic Time
+**Description:** Combination of linear and logarithmic growth.
+
+**Examples:**
+- Efficient sorting algorithms (Merge Sort, Quick Sort, Heap Sort)
+- Array.Sort() in C#
+
+```csharp
+// O(n log n) - Using built-in sort
+public void SortArray(int[] array)
+{
+    Array.Sort(array); // Uses IntroSort: O(n log n)
+}
+
+// Merge Sort - O(n log n)
+public void MergeSort(int[] array, int left, int right)
+{
+    if (left < right)
+    {
+        int mid = (left + right) / 2;
+        MergeSort(array, left, mid);      // log n divisions
+        MergeSort(array, mid + 1, right); // log n divisions
+        Merge(array, left, mid, right);   // n merges
+    }
+}
+```
+
+**Growth:**
+- n = 100 → ~700 operations
+- n = 1000 → ~10,000 operations
+- n = 1,000,000 → ~20,000,000 operations
+
+**Real-world analogy:** Organizing a deck of cards using divide-and-conquer.
+
+---
+
+#### 5. O(n²) - Quadratic Time
+**Description:** Execution time grows quadratically. Often involves nested loops.
+
+**Examples:**
+- Bubble Sort, Selection Sort, Insertion Sort
+- Nested iterations over same array
+- Naive matrix multiplication
+
+```csharp
+// O(n²) - Bubble Sort
+public void BubbleSort(int[] array)
+{
+    int n = array.Length;
+    for (int i = 0; i < n - 1; i++)           // n iterations
+    {
+        for (int j = 0; j < n - i - 1; j++)   // n iterations
+        {
+            if (array[j] > array[j + 1])
+            {
+                int temp = array[j];
+                array[j] = array[j + 1];
+                array[j + 1] = temp;
+            }
+        }
+    }
+}
+
+// O(n²) - Finding duplicates (naive)
+public bool HasDuplicates(int[] array)
+{
+    for (int i = 0; i < array.Length; i++)
+    {
+        for (int j = i + 1; j < array.Length; j++)
+        {
+            if (array[i] == array[j])
+                return true;
+        }
+    }
+    return false;
+}
+```
+
+**Growth:**
+- n = 100 → 10,000 operations
+- n = 1000 → 1,000,000 operations
+- n = 1,000,000 → 1,000,000,000,000 operations (impractical!)
+
+**Real-world analogy:** Comparing every page to every other page in a book.
+
+---
+
+#### 6. O(2ⁿ) - Exponential Time
+**Description:** Execution time doubles with each addition to input. Very slow!
+
+**Examples:**
+- Recursive Fibonacci (naive)
+- Subset generation
+- Tower of Hanoi
+
+```csharp
+// O(2ⁿ) - Naive Fibonacci
+public int FibonacciBad(int n)
+{
+    if (n <= 1) return n;
+    return FibonacciBad(n - 1) + FibonacciBad(n - 2); // Exponential!
+}
+
+// O(n) - Optimized Fibonacci with memoization
+public int FibonacciGood(int n)
+{
+    if (n <= 1) return n;
+    int a = 0, b = 1;
+    for (int i = 2; i <= n; i++)
+    {
+        int temp = a + b;
+        a = b;
+        b = temp;
+    }
+    return b;
+}
+```
+
+**Growth:**
+- n = 10 → 1,024 operations
+- n = 20 → 1,048,576 operations
+- n = 30 → 1,073,741,824 operations
+
+**Real-world analogy:** A chain letter that doubles each generation.
+
+---
+
+#### 7. O(n!) - Factorial Time
+**Description:** Worst possible complexity. Growth explodes rapidly.
+
+**Examples:**
+- Generating all permutations
+- Traveling salesman problem (brute force)
+
+```csharp
+// O(n!) - Generate all permutations
+public void GeneratePermutations(List<int> elements)
+{
+    if (elements.Count == 1)
+    {
+        // Base case
+        return;
+    }
+    
+    for (int i = 0; i < elements.Count; i++)
+    {
+        var remaining = elements.Where((e, idx) => idx != i).ToList();
+        GeneratePermutations(remaining); // n! combinations
+    }
+}
+```
+
+**Growth:**
+- n = 5 → 120 operations
+- n = 10 → 3,628,800 operations
+- n = 20 → 2,432,902,008,176,640,000 operations (impossible!)
+
+---
+
+### Time Complexity Comparison Chart
+
+```
+Operations for different complexities with n = 100:
+
+O(1)       = 1
+O(log n)   = 7
+O(n)       = 100
+O(n log n) = 700
+O(n²)      = 10,000
+O(2ⁿ)      = 1,267,650,600,228,229,401,496,703,205,376
+O(n!)      = [number too large to display]
+```
+
+### Space Complexity
+
+Similar to time complexity but measures **memory usage**:
+
+```csharp
+// O(1) space - constant memory
+public int Sum(int[] array)
+{
+    int sum = 0; // Only one variable
+    foreach (int num in array)
+        sum += num;
+    return sum;
+}
+
+// O(n) space - linear memory
+public int[] DoubleArray(int[] array)
+{
+    int[] result = new int[array.Length]; // New array of size n
+    for (int i = 0; i < array.Length; i++)
+        result[i] = array[i] * 2;
+    return result;
+}
+
+// O(n) space - recursive call stack
+public int Factorial(int n)
+{
+    if (n <= 1) return 1;
+    return n * Factorial(n - 1); // n stack frames
+}
+```
+
+### How to Analyze Time Complexity
+
+1. **Identify loops:** Each loop multiplies complexity
+   - Single loop → O(n)
+   - Nested loops → O(n²)
+   - Three nested loops → O(n³)
+
+2. **Identify recursive calls:** Use recurrence relations
+   - Single recursive call → often O(n)
+   - Two recursive calls (like Fibonacci) → O(2ⁿ)
+
+3. **Ignore constants:** O(2n) = O(n), O(n/2) = O(n)
+
+4. **Take dominant term:** O(n² + n) = O(n²)
+
+5. **Consider best, average, worst cases:**
+   - Best case: minimum time
+   - Average case: typical time
+   - Worst case: maximum time (usually what we measure)
+
+### Practical Examples in C#
+
+```csharp
+// O(1) - Dictionary lookup
+var dict = new Dictionary<string, int>();
+int value = dict["key"]; // Constant time
+
+// O(log n) - Binary search in sorted list
+int index = Array.BinarySearch(sortedArray, target);
+
+// O(n) - LINQ Where
+var filtered = array.Where(x => x > 10);
+
+// O(n log n) - LINQ OrderBy
+var sorted = array.OrderBy(x => x);
+
+// O(n²) - Nested LINQ
+var pairs = from x in array
+            from y in array
+            select new { x, y };
+```
+
+### Optimization Tips
+
+1. **Avoid nested loops** when possible
+2. **Use appropriate data structures:**
+   - Hash tables for O(1) lookup
+   - Binary search trees for O(log n) operations
+3. **Cache results** (memoization) for recursive algorithms
+4. **Use built-in methods** (they're usually optimized)
+5. **Consider trade-offs:** Space vs. Time complexity
+
+### Conclusion
+
+Understanding time complexity is crucial for:
+- **Scalability:** Will your code work with 1 million records?
+- **Performance:** Choosing the right algorithm
+- **Interviews:** Common technical interview topic
+- **Problem-solving:** Recognizing when to optimize
+
+**Remember:** Premature optimization is the root of all evil. Optimize only when necessary, and always profile your code first!
+
+---
+
+## Summary Table: Common Operations
+
+| Operation | Data Structure | Time Complexity |
+|-----------|---------------|-----------------|
+| Access by index | Array | O(1) |
+| Search | Unsorted Array | O(n) |
+| Search | Sorted Array (binary) | O(log n) |
+| Search | Hash Table | O(1) average |
+| Insert/Delete | Array (end) | O(1) |
+| Insert/Delete | Array (middle) | O(n) |
+| Insert/Delete | Linked List (head) | O(1) |
+| Sort | Merge/Quick/Heap Sort | O(n log n) |
+| Sort | Bubble/Selection/Insertion | O(n²) |
+
+---
+
+**References:**
+- Big-O Cheat Sheet: https://www.bigocheatsheet.com/
+- Microsoft .NET Performance Documentation
+- Introduction to Algorithms (CLRS)
+- C# Data Structures and Algorithms
+
+---
+
+*This report covers essential concepts for understanding memory management and algorithm efficiency in C# programming.*
